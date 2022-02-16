@@ -24,24 +24,25 @@ from turbojpeg import (CUSTOMFILTER, TJXOP_NONE, TJXOPT_CROP, TJXOPT_GRAY,
                        TJXOPT_PERFECT, BackgroundStruct, CroppingRegion,
                        TransformStruct, fill_background)
 
-turbo_path = 'C:/libjpeg-turbo64/bin/turbojpeg.dll'
-test_file_path = 'C:/temp/opentile/turbojpeg/frame_1024x512.jpg'
+
+@pytest.fixture(scope="class")
+def test_buffer(request, open_tiler_testdir):
+    test_file_path = open_tiler_testdir / "turbojpeg" / "frame_1024x512.jpg"
+    if not test_file_path.is_file():
+        pytest.skip("turbojpeg test file not found")
+    request.cls.buffer = test_file_path.read_bytes()
+    yield
+
+
+@pytest.fixture(scope="class")
+def _jpeg(request, jpegturbo_path):
+    request.cls.jpeg = TurboJPEG(jpegturbo_path)
+    yield
 
 
 @pytest.mark.turbojpeg
+@pytest.mark.usefixtures("_jpeg")
 class TurboJpegTest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    @classmethod
-    def setUpClass(cls):
-        cls.jpeg = TurboJPEG(turbo_path)
-        cls.test_file = open(test_file_path, 'rb')
-        cls.buffer = cls.test_file.read()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.test_file.close()
 
     def test__need_fill_background(self):
         image_size = (2048, 1024)
@@ -106,6 +107,7 @@ class TurboJpegTest(unittest.TestCase):
                 (region.x, region.y, region.w, region.h)
             )
 
+    @pytest.mark.usefixtures("test_buffer")
     def test_crop_multiple_compare(self):
         crop_parameters = [(0, 0, 512, 512), (512, 0, 512, 512)]
         singe_crops = [
@@ -115,6 +117,7 @@ class TurboJpegTest(unittest.TestCase):
         multiple_crops = self.jpeg.crop_multiple(self.buffer, crop_parameters)
         self.assertEqual(singe_crops, multiple_crops)
 
+    @pytest.mark.usefixtures("test_buffer")
     def test_crop_multiple_extend(self):
         crop_parameters = [(0, 0, 1024, 1024)]
         crop = self.jpeg.crop_multiple(self.buffer, crop_parameters)[0]

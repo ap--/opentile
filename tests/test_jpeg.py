@@ -12,48 +12,38 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
 import unittest
 from hashlib import md5
-from pathlib import Path
 
 import pytest
 from opentile.geometry import Size
 from opentile.jpeg import Jpeg
 from tifffile import TiffFile, TiffPage
 
-test_data_dir = os.environ.get(
-    "OPENTILE_TESTDIR",
-    "C:/temp/opentile/"
-)
 
-ndpi_file_path = Path(test_data_dir).joinpath("ndpi/CMU-1/CMU-1.ndpi")
-svs_file_path = Path(test_data_dir).joinpath("svs/CMU-1/CMU-1.svs")
-turbojpeg_path = Path('C:/libjpeg-turbo64/bin/turbojpeg.dll')
+@pytest.fixture(scope="class")
+def _jpeg(request, jpegturbo_path):
+    request.cls.jpeg = Jpeg(jpegturbo_path)
+
+
+@pytest.fixture(scope="class")
+def _svs_tiff(request, svs_file_path):
+    request.cls.svs_tiff = tf = TiffFile(svs_file_path)
+    request.cls.svs_overview = tf.series[3].pages[0]
+    with tf:
+        yield
+
+
+@pytest.fixture(scope="class")
+def _ndpi_tiff(request, ndpi_file_path):
+    request.cls.ndpi_tiff = tf = TiffFile(ndpi_file_path)
+    request.cls.ndpi_level = tf.series[0].levels[0].pages[0]
+    with tf:
+        yield
 
 
 @pytest.mark.unittest
 class JpegTest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.jpeg = Jpeg(turbojpeg_path)
-
-    @classmethod
-    def setUpClass(cls):
-        try:
-            cls.ndpi_tiff = TiffFile(ndpi_file_path)
-            cls.ndpi_level = cls.ndpi_tiff.series[0].levels[0].pages[0]
-            cls.svs_tiff = TiffFile(svs_file_path)
-            cls.svs_overview = cls.svs_tiff.series[3].pages[0]
-        except FileNotFoundError:
-            raise unittest.SkipTest(
-                'Svs or ndpi test file not found, skipping'
-            )
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.ndpi_tiff.close()
-        cls.svs_tiff.close()
 
     @staticmethod
     def read_frame(tiff: TiffFile, level: TiffPage, index: int) -> bytes:
@@ -69,12 +59,14 @@ class JpegTest(unittest.TestCase):
         self.assertEqual(Jpeg.restart_mark(7), bytes([0xD7]))
         self.assertEqual(Jpeg.restart_mark(9), bytes([0xD1]))
 
+    @pytest.mark.usefixtures("_ndpi_tiff")
     def test_find_tag(self):
         header = self.ndpi_level.jpegheader
         index, length = Jpeg._find_tag(header, Jpeg.start_of_frame())
         self.assertEqual(621, index)
         self.assertEqual(17, length)
 
+    @pytest.mark.usefixtures("_ndpi_tiff", "_jpeg")
     def test_update_header(self):
         target_size = Size(512, 200)
         updated_header = Jpeg.manipulate_header(
@@ -88,6 +80,7 @@ class JpegTest(unittest.TestCase):
         ) = self.jpeg._turbo_jpeg.decode_header(updated_header)
         self.assertEqual(target_size, Size(stripe_width, stripe_height))
 
+    @pytest.mark.usefixtures("_ndpi_tiff", "_jpeg")
     def test_concatenate_fragments(self):
         frame = self.jpeg.concatenate_fragments(
             (
@@ -101,6 +94,7 @@ class JpegTest(unittest.TestCase):
             md5(frame).hexdigest()
         )
 
+    @pytest.mark.usefixtures("_svs_tiff", "_jpeg")
     def test_concatenate_scans(self):
         frame = self.jpeg.concatenate_scans(
             (
@@ -115,6 +109,7 @@ class JpegTest(unittest.TestCase):
             md5(frame).hexdigest()
         )
 
+    @pytest.mark.usefixtures("_jpeg")
     def test_code_short(self):
         self.assertEqual(
             bytes([0x00, 0x06]),

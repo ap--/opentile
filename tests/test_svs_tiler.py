@@ -12,41 +12,32 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
 import unittest
+from contextlib import closing
 from hashlib import md5
-from pathlib import Path
 from typing import cast
 
 import pytest
 from opentile.geometry import Point
 from opentile.svs_tiler import SvsTiledPage, SvsTiler
 
-test_data_dir = os.environ.get(
-    "OPENTILE_TESTDIR",
-    "C:/temp/opentile/"
-)
-svs_file_path = Path(test_data_dir).joinpath("svs/CMU-1/CMU-1.svs")
-turbojpeg_path = Path('C:/libjpeg-turbo64/bin/turbojpeg.dll')
+
+@pytest.fixture(scope="class")
+def _svs_tiler(request, svs_file_path, jpegturbo_path):
+    tiler = SvsTiler(
+        svs_file_path,
+        jpegturbo_path
+    )
+    request.cls.tiler = tiler
+    request.cls.level = cast(SvsTiledPage, tiler.get_level(0))
+    with closing(tiler):
+        yield
 
 
 @pytest.mark.unittest
+@pytest.mark.usefixtures("_svs_tiler")
 class SvsTilerTest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tiler: SvsTiler
-
-    @classmethod
-    def setUpClass(cls):
-        try:
-            cls.tiler = SvsTiler(svs_file_path, turbojpeg_path)
-        except FileNotFoundError:
-            raise unittest.SkipTest('Svs test file not found, skipping')
-        cls.level = cast(SvsTiledPage, cls.tiler.get_level(0))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tiler.close()
+    tiler: SvsTiler
 
     def test_get_tile(self):
         tile = self.level.get_tile((15, 25))

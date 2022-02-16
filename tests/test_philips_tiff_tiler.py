@@ -12,46 +12,30 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
 import unittest
+from contextlib import closing
 from hashlib import md5
-from pathlib import Path
 
 import pytest
 from opentile.philips_tiff_tiler import PhilipsTiffTiler
 
-test_data_dir = os.environ.get(
-    "OPENTILE_TESTDIR",
-    "C:/temp/opentile/"
-)
-philips_file_path = Path(test_data_dir).joinpath(
-    "philips_tiff/philips1/input.tif"
-)
-turbojpeg_path = Path('C:/libjpeg-turbo64/bin/turbojpeg.dll')
+
+@pytest.fixture(scope="class")
+def _philips_tiff_tiler(request, philips_file_path, jpegturbo_path):
+    tiler = PhilipsTiffTiler(
+        philips_file_path,
+        jpegturbo_path
+    )
+    request.cls.tiler = tiler
+    request.cls.level = tiler.get_level(0)
+    with closing(tiler):
+        yield
 
 
 @pytest.mark.unittest
+@pytest.mark.usefixtures("_philips_tiff_tiler")
 class PhilipsTiffTilerTest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tiler: PhilipsTiffTiler
-
-    @classmethod
-    def setUpClass(cls):
-        try:
-            cls.tiler = PhilipsTiffTiler(
-                philips_file_path,
-                turbojpeg_path
-            )
-        except FileNotFoundError:
-            raise unittest.SkipTest(
-                'Philips tiff test file not found, skipping'
-            )
-        cls.level = cls.tiler.get_level(0)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tiler.close()
+    tiler: PhilipsTiffTiler
 
     def test_get_tile(self):
         tile = self.level.get_tile((0, 0))

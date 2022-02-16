@@ -12,10 +12,9 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
 import unittest
+from contextlib import closing
 from hashlib import md5
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -23,37 +22,26 @@ from opentile.geometry import Point, Size
 from opentile.ndpi_tiler import (NdpiCache, NdpiFrameJob, NdpiStripedPage,
                                  NdpiTile, NdpiTiler)
 
-test_data_dir = os.environ.get(
-    "OPENTILE_TESTDIR",
-    "C:/temp/opentile/"
-)
 
-ndpi_file_path = Path(test_data_dir).joinpath("ndpi/CMU-1/CMU-1.ndpi")
-turbojpeg_path = Path('C:/libjpeg-turbo64/bin/turbojpeg.dll')
+@pytest.fixture(scope="class")
+def _ndpi_tiler(request, ndpi_file_path, jpegturbo_path):
+    tile_size = Size(512, 512)
+    tiler = NdpiTiler(
+        ndpi_file_path,
+        tile_size.width,
+        jpegturbo_path
+    )
+    request.cls.tile_size = tile_size
+    request.cls.tiler = tiler
+    request.cls.level = cast(NdpiStripedPage, tiler.get_level(0))
+    with closing(tiler):
+        yield
 
 
 @pytest.mark.unittest
+@pytest.mark.usefixtures("_ndpi_tiler")
 class NdpiTilerTest(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tiler: NdpiTiler
-
-    @classmethod
-    def setUpClass(cls):
-        cls.tile_size = Size(512, 512)
-        try:
-            cls.tiler = NdpiTiler(
-                ndpi_file_path,
-                cls.tile_size.width,
-                turbojpeg_path
-            )
-        except FileNotFoundError:
-            raise unittest.SkipTest('ndpi test file not found, skipping')
-        cls.level = cast(NdpiStripedPage, cls.tiler.get_level(0))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tiler.close()
+    tiler: NdpiTiler
 
     def test_get_stripe_position_to_index(self):
         self.assertEqual(
